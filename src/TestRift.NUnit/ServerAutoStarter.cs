@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -54,7 +55,10 @@ namespace TestRift.NUnit
             var probeBaseUris = GetProbeBaseUris(baseUri);
             var wasHealthy = IsHealthyAny(probeBaseUris, "/health");
 
-            Console.WriteLine($"[TestRift] autoStartServer: starting TestRift Server (pip) for {baseUri}...");
+            var serverPath = FindTestRiftServer();
+            var isNuGet = serverPath != null && serverPath.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);
+            var source = isNuGet ? "NuGet package" : "pip";
+            Console.WriteLine($"[TestRift] autoStartServer: starting TestRift Server ({source}) for {baseUri}...");
             if (!string.IsNullOrWhiteSpace(serverYamlPath))
             {
                 Console.WriteLine($"[TestRift] autoStartServer: using TESTRIFT_SERVER_YAML='{serverYamlPath}'");
@@ -191,6 +195,13 @@ namespace TestRift.NUnit
 
         private static int StartDetachedServerProcessPosix(string serverYamlPath, bool restartOnConfigChange)
         {
+            // Try to find NuGet package first, then fall back to PATH
+            var serverPath = FindNuGetPackageServerPosix();
+            if (string.IsNullOrWhiteSpace(serverPath) || !File.Exists(serverPath))
+            {
+                serverPath = "testrift-server"; // Fall back to PATH
+            }
+
             var envPrefixPosix = "";
             if (!string.IsNullOrWhiteSpace(serverYamlPath))
             {
@@ -198,10 +209,11 @@ namespace TestRift.NUnit
                 envPrefixPosix = $"TESTRIFT_SERVER_YAML='{escaped}' ";
             }
             var args = restartOnConfigChange ? " --restart-on-config" : "";
+            var escapedPath = EscapeForPosixSingleQuoted(serverPath);
             var psiPosix = new ProcessStartInfo
             {
                 FileName = "/bin/sh",
-                Arguments = $"-c \"{envPrefixPosix}testrift-server{args} >/dev/null 2>&1 &\"",
+                Arguments = $"-c \"{envPrefixPosix}{escapedPath}{args} >/dev/null 2>&1 &\"",
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 WorkingDirectory = Environment.CurrentDirectory,
@@ -213,6 +225,70 @@ namespace TestRift.NUnit
             }
             p2.WaitForExit(15000);
             return p2.ExitCode;
+        }
+
+        private static string FindNuGetPackageServerPosix()
+        {
+            // Similar to Windows, but look for .sh script
+            var assemblyLocation = typeof(ServerAutoStarter).Assembly.Location;
+            if (!string.IsNullOrWhiteSpace(assemblyLocation))
+            {
+                var assemblyDir = Path.GetDirectoryName(assemblyLocation);
+                if (!string.IsNullOrWhiteSpace(assemblyDir))
+                {
+                    var wrapperPath = Path.Combine(assemblyDir, "testrift-server.sh");
+                    if (File.Exists(wrapperPath))
+                    {
+                        return wrapperPath;
+                    }
+
+                    var packagesDir = Path.Combine(assemblyDir, "..", "..", "packages");
+                    if (Directory.Exists(packagesDir))
+                    {
+                        var testriftServerDir = Path.Combine(packagesDir, "TestRift.Server");
+                        if (Directory.Exists(testriftServerDir))
+                        {
+                            var versions = Directory.GetDirectories(testriftServerDir)
+                                .Select(d => new { Path = d, Version = Path.GetFileName(d) })
+                                .Where(x => System.Version.TryParse(x.Version, out _))
+                                .OrderByDescending(x => System.Version.Parse(x.Version))
+                                .ToList();
+
+                            foreach (var version in versions)
+                            {
+                                var wrapperPathSh = Path.Combine(version.Path, "content", "testrift-server.sh");
+                                if (File.Exists(wrapperPathSh))
+                                {
+                                    return wrapperPathSh;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Check NuGet global cache (~/.nuget/packages)
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var nugetCache = Path.Combine(home, ".nuget", "packages", "testrift.server");
+            if (Directory.Exists(nugetCache))
+            {
+                var versions = Directory.GetDirectories(nugetCache)
+                    .Select(d => new { Path = d, Version = Path.GetFileName(d) })
+                    .Where(x => System.Version.TryParse(x.Version, out _))
+                    .OrderByDescending(x => System.Version.Parse(x.Version))
+                    .ToList();
+
+                foreach (var version in versions)
+                {
+                    var wrapperPathSh = Path.Combine(version.Path, "content", "testrift-server.sh");
+                    if (File.Exists(wrapperPathSh))
+                    {
+                        return wrapperPathSh;
+                    }
+                }
+            }
+
+            return null;
         }
 
         private sealed class StartDiagnostics
@@ -242,7 +318,7 @@ namespace TestRift.NUnit
 
         private static StartDiagnostics RunWindowsStartProcessAndWait(string serverYamlPath, bool waitForExit, int port, int startupTimeoutMs)
         {
-            var serverExePath = FindCommandOnPathWindows("testrift-server");
+            var serverExePath = FindTestRiftServer();
 
             var envPrefix = "";
             if (!string.IsNullOrWhiteSpace(serverYamlPath))
@@ -314,7 +390,7 @@ namespace TestRift.NUnit
 
         private static StartDiagnostics StartServerBreakawayWindows(string serverYamlPath, bool restartOnConfigChange)
         {
-            var serverExePath = FindCommandOnPathWindows("testrift-server");
+            var serverExePath = FindTestRiftServer();
 
             var stdoutPath = Path.Combine(Path.GetTempPath(), $"testrift-server-autostart-{Guid.NewGuid():N}.stdout.log");
             var stderrPath = Path.Combine(Path.GetTempPath(), $"testrift-server-autostart-{Guid.NewGuid():N}.stderr.log");
@@ -350,6 +426,111 @@ namespace TestRift.NUnit
                 ProcessHandle = started.hProcess,
                 ProcessId = (int)started.dwProcessId,
             };
+        }
+
+        /// <summary>
+        /// Finds the TestRift Server executable/wrapper script.
+        /// First checks for NuGet package, then falls back to PATH (pip-installed).
+        /// </summary>
+        private static string FindTestRiftServer()
+        {
+            // Try NuGet package first
+            var nugetPath = FindNuGetPackageServer();
+            if (!string.IsNullOrWhiteSpace(nugetPath) && File.Exists(nugetPath))
+            {
+                return nugetPath;
+            }
+
+            // Fall back to PATH (pip-installed)
+            return FindCommandOnPathWindows("testrift-server");
+        }
+
+        /// <summary>
+        /// Attempts to find the TestRift.Server NuGet package wrapper script.
+        /// </summary>
+        private static string FindNuGetPackageServer()
+        {
+            // Strategy: Look for the wrapper script in common NuGet package locations
+            // 1. Check near the executing assembly (for PackageReference scenarios)
+            // 2. Check in packages directory (for packages.config scenarios)
+            // 3. Check in NuGet global cache
+
+            var assemblyLocation = typeof(ServerAutoStarter).Assembly.Location;
+            if (!string.IsNullOrWhiteSpace(assemblyLocation))
+            {
+                var assemblyDir = Path.GetDirectoryName(assemblyLocation);
+                if (!string.IsNullOrWhiteSpace(assemblyDir))
+                {
+                    // For PackageReference, content files might be in the output directory
+                    var wrapperPath = Path.Combine(assemblyDir, "testrift-server.bat");
+                    if (File.Exists(wrapperPath))
+                    {
+                        return wrapperPath;
+                    }
+
+                    // Or in a packages subdirectory
+                    var packagesDir = Path.Combine(assemblyDir, "..", "..", "packages");
+                    if (Directory.Exists(packagesDir))
+                    {
+                        var nugetWrapper = FindInPackagesDirectory(packagesDir);
+                        if (!string.IsNullOrWhiteSpace(nugetWrapper))
+                        {
+                            return nugetWrapper;
+                        }
+                    }
+                }
+            }
+
+            // Check NuGet global cache (typically %USERPROFILE%\.nuget\packages)
+            var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var nugetCache = Path.Combine(userProfile, ".nuget", "packages", "testrift.server");
+            if (Directory.Exists(nugetCache))
+            {
+                // Find the latest version
+                var versions = Directory.GetDirectories(nugetCache)
+                    .Select(d => new { Path = d, Version = Path.GetFileName(d) })
+                    .Where(x => System.Version.TryParse(x.Version, out _))
+                    .OrderByDescending(x => System.Version.Parse(x.Version))
+                    .ToList();
+
+                foreach (var version in versions)
+                {
+                    var wrapperPath = Path.Combine(version.Path, "content", "testrift-server.bat");
+                    if (File.Exists(wrapperPath))
+                    {
+                        return wrapperPath;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private static string FindInPackagesDirectory(string packagesDir)
+        {
+            var testriftServerDir = Path.Combine(packagesDir, "TestRift.Server");
+            if (!Directory.Exists(testriftServerDir))
+            {
+                return null;
+            }
+
+            // Find the latest version
+            var versions = Directory.GetDirectories(testriftServerDir)
+                .Select(d => new { Path = d, Version = Path.GetFileName(d) })
+                .Where(x => System.Version.TryParse(x.Version, out _))
+                .OrderByDescending(x => System.Version.Parse(x.Version))
+                .ToList();
+
+            foreach (var version in versions)
+            {
+                var wrapperPath = Path.Combine(version.Path, "content", "testrift-server.bat");
+                if (File.Exists(wrapperPath))
+                {
+                    return wrapperPath;
+                }
+            }
+
+            return null;
         }
 
         private static string FindCommandOnPathWindows(string command)
