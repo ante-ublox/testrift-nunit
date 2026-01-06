@@ -42,6 +42,13 @@ namespace TestRift.NUnit
     public class Config
     {
         /// <summary>
+        /// Base URL to the TestRift server (used for WebSocket + HTTP).
+        /// Example: http://localhost:8080
+        /// Supports environment variable expansion with ${env:VAR_NAME} syntax.
+        /// </summary>
+        public string ServerUrl { get; set; }
+
+        /// <summary>
         /// Human-readable name for this test run, displayed in the UI instead of the run_id.
         /// Supports environment variable expansion with ${env:VAR_NAME} syntax.
         /// </summary>
@@ -106,6 +113,10 @@ namespace TestRift.NUnit
                 // Expand run name
                 if (!string.IsNullOrEmpty(cfg.RunName))
                     cfg.RunName = VarExpander.Expand(cfg.RunName);
+
+                // Expand server URL
+                if (!string.IsNullOrEmpty(cfg.ServerUrl))
+                    cfg.ServerUrl = VarExpander.Expand(cfg.ServerUrl);
 
                 // Expand run ID
                 if (!string.IsNullOrEmpty(cfg.RunId))

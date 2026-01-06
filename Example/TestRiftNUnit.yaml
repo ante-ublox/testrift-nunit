@@ -1,3 +1,6 @@
+# Server base URL (used for WebSocket + HTTP)
+serverUrl: http://localhost:8080
+
 # Human-readable name for this test run (displayed in UI instead of run_id)
 runName: Example Test Run
 

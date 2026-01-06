@@ -3,10 +3,9 @@ echo TestRift.NUnit - NUnit Test Runner
 echo ================================
 
 REM Set environment variables
-set TEST_LOG_SERVER_URL=http://localhost:8080
-set TEST_DUT_NAME=LENOVO-LAPTOP
+REM Server connection is configured in TestRiftNUnit.yaml (see TESTRIFT_NUNIT_YAML)
 
-REM Set user metadata environment variables for TRNUnitConfig.yaml
+REM Set user metadata environment variables for TestRiftNUnit.yaml
 set DUT_MODEL=TestDevice-001
 set DUT_URL=https://device-manager.example.com/devices/TestDevice-001
 set FIRMWARE_BRANCH=release/v2.1.0
@@ -15,18 +14,16 @@ set PRODUCT=SampleProduct
 set BRANCH=release/v2.1.0
 
 REM Set config path for user metadata
-set TRNUNIT_CONFIG_PATH=TRNUnitConfig.yaml
+set TESTRIFT_NUNIT_YAML=TestRiftNUnit.yaml
 
 echo Environment variables set:
-echo   TEST_LOG_SERVER_URL=%TEST_LOG_SERVER_URL%
-echo   TEST_DUT_NAME=%TEST_DUT_NAME%
 echo   DUT_MODEL=%DUT_MODEL%
 echo   DUT_URL=%DUT_URL%
 echo   FIRMWARE_BRANCH=%FIRMWARE_BRANCH%
 echo   TESTSYSTEM_URL=%TESTSYSTEM_URL%
 echo   PRODUCT=%PRODUCT%
 echo   BRANCH=%BRANCH%
-echo   TRNUNIT_CONFIG_PATH=%TRNUNIT_CONFIG_PATH%
+echo   TESTRIFT_NUNIT_YAML=%TESTRIFT_NUNIT_YAML%
 echo.
 
 echo Building TestRift.NUnit library...
@@ -50,7 +47,7 @@ if %ERRORLEVEL% neq 0 (
 
 echo.
 echo Running example tests...
-echo Make sure the Test Log Server is running on %TEST_LOG_SERVER_URL%
+echo Make sure the TestRift Server is running on http://localhost:8080
 echo.
 
 REM Run the example tests

@@ -17,14 +17,26 @@ namespace TestRift.NUnit
             Console.WriteLine("=== RunHooks CONSTRUCTOR CALLED ===");
             ThreadSafeFileLogger.LogRunHooksConstructor();
 
-            // Use constructor parameter first, fall back to environment variable if null or empty
-            var finalConfigPath = string.IsNullOrEmpty(configPath)
-                ? Environment.GetEnvironmentVariable("TRNUNIT_CONFIG_PATH")
-                : configPath;
+            // Use constructor parameter first, then environment variable, then ./TestRiftNUnit.yaml in CWD.
+            var finalConfigPath = string.IsNullOrEmpty(configPath) ? null : configPath;
+            if (string.IsNullOrEmpty(finalConfigPath))
+            {
+                finalConfigPath = Environment.GetEnvironmentVariable("TESTRIFT_NUNIT_YAML");
+            }
+
+            if (string.IsNullOrEmpty(finalConfigPath))
+            {
+                var cwdDefault = Path.Combine(Directory.GetCurrentDirectory(), "TestRiftNUnit.yaml");
+                if (File.Exists(cwdDefault))
+                {
+                    finalConfigPath = cwdDefault;
+                }
+            }
+
             if (!string.IsNullOrEmpty(finalConfigPath))
             {
                 ConfigManager.Load(finalConfigPath);
-                Console.WriteLine($"Config path would be: {finalConfigPath}");
+                Console.WriteLine($"Loaded TestRift NUnit config: {finalConfigPath}");
             }
         }
 

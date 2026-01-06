@@ -12,7 +12,7 @@
     <Authors>Andreas Anderberg</Authors>
     <Description>TestRift real-time logging and test run metadata plugin for NUnit.</Description>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageReadmeFile>NUGET.md</PackageReadmeFile>
     <RepositoryType>git</RepositoryType>
     <RepositoryUrl>https://github.com/testrift/testrift-nunit</RepositoryUrl>
     <PackageProjectUrl>https://github.com/testrift/testrift-nunit</PackageProjectUrl>
@@ -22,7 +22,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="..\..\README.md" Pack="true" PackagePath="" />
+    <None Include="..\..\NUGET.md" Pack="true" PackagePath="" />
     <None Include="..\..\LICENSE" Pack="true" PackagePath="" />
   </ItemGroup>
 

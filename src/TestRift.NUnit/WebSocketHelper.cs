@@ -31,7 +31,23 @@ namespace TestRift.NUnit
 
         public WebSocketHelper(string serverBaseUrl = null)
         {
-            _serverBaseUrl = serverBaseUrl ?? Environment.GetEnvironmentVariable("TEST_LOG_SERVER_URL") ?? "http://localhost:8080";
+            if (!string.IsNullOrWhiteSpace(serverBaseUrl))
+            {
+                _serverBaseUrl = serverBaseUrl;
+            }
+            else
+            {
+                // Prefer YAML config if available; otherwise fall back to localhost.
+                try
+                {
+                    var cfg = ConfigManager.Get();
+                    _serverBaseUrl = !string.IsNullOrWhiteSpace(cfg.ServerUrl) ? cfg.ServerUrl : "http://localhost:8080";
+                }
+                catch
+                {
+                    _serverBaseUrl = "http://localhost:8080";
+                }
+            }
             _runId = null;  // Will be set by server response
 
             // Initialize batch timer to send messages every 1 second
