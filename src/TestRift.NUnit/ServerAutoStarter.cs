@@ -771,7 +771,31 @@ namespace TestRift.NUnit
                         lpStartupInfo: ref siex,
                         lpProcessInformation: out var pi))
                 {
-                    throw new InvalidOperationException($"CreateProcessW failed (win32={Marshal.GetLastWin32Error()}).");
+                    var err = Marshal.GetLastWin32Error();
+                    // ERROR_ACCESS_DENIED (5) can occur if breakaway not allowed (e.g., GitHub Actions)
+                    // Retry without CREATE_BREAKAWAY_FROM_JOB flag
+                    if (err == 5)
+                    {
+                        flags &= ~CREATE_BREAKAWAY_FROM_JOB;
+                        if (!CreateProcessW(
+                                lpApplicationName: null,
+                                lpCommandLine: cmdLine,
+                                lpProcessAttributes: IntPtr.Zero,
+                                lpThreadAttributes: IntPtr.Zero,
+                                bInheritHandles: true,
+                                dwCreationFlags: flags,
+                                lpEnvironment: envPtr,
+                                lpCurrentDirectory: workingDirectory,
+                                lpStartupInfo: ref siex,
+                                lpProcessInformation: out pi))
+                        {
+                            throw new InvalidOperationException($"CreateProcessW failed (win32={Marshal.GetLastWin32Error()}).");
+                        }
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException($"CreateProcessW failed (win32={err}).");
+                    }
                 }
 
                 // We no longer need the thread handle.
