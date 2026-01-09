@@ -1,0 +1,63 @@
+name: Test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: '6.0.x'
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build
+      run: dotnet build --no-restore --configuration Release
+
+    - name: Test with minimum versions
+      run: dotnet test tests/TestRift.NUnit.Tests/TestRift.NUnit.Tests.csproj --no-build --configuration Release --verbosity normal --logger "console;verbosity=detailed"
+
+    - name: Test with maximum versions
+      run: dotnet test tests/TestRift.NUnit.Tests.MaxVersions/TestRift.NUnit.Tests.MaxVersions.csproj --no-build --configuration Release --verbosity normal --logger "console;verbosity=detailed"
+
+    - name: Integration tests
+      run: dotnet test tests/TestRift.NUnit.Integration.Tests/TestRift.NUnit.Integration.Tests.csproj --no-build --configuration Release --verbosity normal --logger "console;verbosity=detailed"
+
+  test-netframework:
+    name: Test on .NET Framework 4.6.2 (Windows)
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: '6.0.x'
+
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v1
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build for net462
+      run: msbuild src/TestRift.NUnit/TestRift.NUnit.csproj /p:Configuration=Release /p:TargetFramework=net462
+
+    - name: Display build info
+      run: |
+        echo "Built assemblies for .NET Framework 4.6.2"
+        dir src\TestRift.NUnit\bin\Release\net462\
