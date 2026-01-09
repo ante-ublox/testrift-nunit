@@ -380,11 +380,17 @@ namespace TestRift.NUnit
             var nugetPath = FindNuGetPackageServer();
             if (!string.IsNullOrWhiteSpace(nugetPath) && File.Exists(nugetPath))
             {
+                Console.WriteLine($"[TestRift] Found TestRift Server in NuGet package: {nugetPath}");
                 return nugetPath;
             }
 
             // Fall back to PATH (pip-installed)
-            return FindCommandOnPathWindows("testrift-server");
+            var pathServer = FindCommandOnPathWindows("testrift-server");
+            if (!string.IsNullOrWhiteSpace(pathServer))
+            {
+                Console.WriteLine($"[TestRift] Found TestRift Server on PATH (pip-installed): {pathServer}");
+            }
+            return pathServer;
         }
 
         /// <summary>
