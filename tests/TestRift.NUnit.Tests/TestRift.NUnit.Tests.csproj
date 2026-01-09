@@ -9,7 +9,7 @@
   <ItemGroup>
     <!-- Test with minimum supported versions -->
     <PackageReference Include="NUnit" Version="3.7.0" />
-    <PackageReference Include="NUnit3TestAdapter" Version="4.0.0" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.5.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.0.0" />
     <PackageReference Include="TestRift.Server" Version="*" />
   </ItemGroup>
