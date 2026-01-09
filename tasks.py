@@ -15,6 +15,14 @@ spec = importlib.util.spec_from_file_location("test_tasks_module", tests_tasks_p
 test_tasks_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(test_tasks_module)
 
+REPO_DIR = Path(__file__).parent
+PROJECTS = [
+    REPO_DIR / "Example" / "ExampleTests.csproj",
+    REPO_DIR / "tests" / "TestRift.NUnit.Tests" / "TestRift.NUnit.Tests.csproj",
+    REPO_DIR / "tests" / "TestRift.NUnit.Tests.MaxVersions" / "TestRift.NUnit.Tests.MaxVersions.csproj",
+    REPO_DIR / "tests" / "TestRift.NUnit.Integration.Tests" / "TestRift.NUnit.Integration.Tests.csproj",
+]
+
 
 @task
 def build(c):
@@ -34,14 +42,13 @@ def build(c):
 @task
 def clean(c):
     """Remove build artifacts (bin/, obj/, artifacts/)."""
-    repo_dir = Path(__file__).parent
-    for p in repo_dir.rglob("bin"):
+    for p in REPO_DIR.rglob("bin"):
         if p.is_dir():
             shutil.rmtree(p, ignore_errors=True)
-    for p in repo_dir.rglob("obj"):
+    for p in REPO_DIR.rglob("obj"):
         if p.is_dir():
             shutil.rmtree(p, ignore_errors=True)
-    artifacts = repo_dir / "artifacts"
+    artifacts = REPO_DIR / "artifacts"
     if artifacts.exists():
         shutil.rmtree(artifacts, ignore_errors=True)
 
@@ -49,9 +56,8 @@ def clean(c):
 @task(pre=[clean])
 def pack(c, configuration="Release"):
     """Create the NuGet package (nupkg + snupkg) into ./artifacts."""
-    repo_dir = Path(__file__).parent
-    proj_dir = repo_dir / "src" / "TestRift.NUnit"
-    out_dir = repo_dir / "artifacts"
+    proj_dir = REPO_DIR / "src" / "TestRift.NUnit"
+    out_dir = REPO_DIR / "artifacts"
     out_dir.mkdir(exist_ok=True)
     with c.cd(str(proj_dir)):
         c.run(f"dotnet pack -c {configuration} -o ..\\..\\artifacts")
@@ -70,8 +76,7 @@ def publish(c, source="https://api.nuget.org/v3/index.json", api_key=None):
     if not api_key:
         raise RuntimeError("Missing NuGet API key. Pass --api-key or set NUGET_API_KEY.")
 
-    repo_dir = Path(__file__).parent
-    artifacts_dir = repo_dir / "artifacts"
+    artifacts_dir = REPO_DIR / "artifacts"
     for pkg in artifacts_dir.glob("*.nupkg"):
         if pkg.name.endswith(".snupkg"):
             continue
@@ -81,25 +86,26 @@ def publish(c, source="https://api.nuget.org/v3/index.json", api_key=None):
 @task
 def restore_local(c):
     """Restore all test projects and example using local testrift-server NuGet package."""
-    repo_dir = Path(__file__).parent
-    server_nuget_dir = repo_dir.parent / "testrift-server" / "nuget" / "TestRift.Server" / "bin" / "Release"
+    server_nuget_dir = REPO_DIR.parent / "testrift-server" / "nuget" / "TestRift.Server" / "bin" / "Release"
 
     if not server_nuget_dir.exists():
         print(f"ERROR: Local TestRift.Server package not found at: {server_nuget_dir}")
         print("Run 'inv build-nuget' in testrift-server directory first.")
         return
 
-    projects = [
-        repo_dir / "Example" / "ExampleTests.csproj",
-        repo_dir / "tests" / "TestRift.NUnit.Tests" / "TestRift.NUnit.Tests.csproj",
-        repo_dir / "tests" / "TestRift.NUnit.Tests.MaxVersions" / "TestRift.NUnit.Tests.MaxVersions.csproj",
-        repo_dir / "tests" / "TestRift.NUnit.Integration.Tests" / "TestRift.NUnit.Integration.Tests.csproj",
-    ]
-
     print(f"Using local TestRift.Server feed: {server_nuget_dir}")
-    for proj in projects:
+    for proj in PROJECTS:
         print(f"\nRestoring {proj.parent.name}...")
         c.run(f'dotnet restore "{proj}" --force')
+
+
+@task
+def restore(c):
+    """Restore all projects using only public NuGet feeds."""
+    print("Restoring projects from public NuGet feeds...")
+    for proj in PROJECTS:
+        print(f"\nRestoring {proj.parent.name} (public)...")
+        c.run(f'dotnet restore "{proj}" --force /p:LocalTestRiftServerFeed=__disable__')
 
 
 @task
@@ -133,6 +139,7 @@ ns.add_task(clean)
 ns.add_task(pack)
 ns.add_task(publish)
 ns.add_task(restore_local)
+ns.add_task(restore)
 ns.add_task(run_example)
 
 # Add test namespace from tests/tasks.py
