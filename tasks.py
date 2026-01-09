@@ -6,6 +6,14 @@ from invoke import Collection, task
 import os
 import shutil
 from pathlib import Path
+import sys
+import importlib.util
+
+# Import test tasks from tests/tasks.py using explicit path
+tests_tasks_path = Path(__file__).parent / "tests" / "tasks.py"
+spec = importlib.util.spec_from_file_location("test_tasks_module", tests_tasks_path)
+test_tasks_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(test_tasks_module)
 
 
 @task
@@ -71,6 +79,30 @@ def publish(c, source="https://api.nuget.org/v3/index.json", api_key=None):
 
 
 @task
+def restore_local(c):
+    """Restore all test projects and example using local testrift-server NuGet package."""
+    repo_dir = Path(__file__).parent
+    server_nuget_dir = repo_dir.parent / "testrift-server" / "nuget" / "TestRift.Server" / "bin" / "Release"
+
+    if not server_nuget_dir.exists():
+        print(f"ERROR: Local TestRift.Server package not found at: {server_nuget_dir}")
+        print("Run 'inv build-nuget' in testrift-server directory first.")
+        return
+
+    projects = [
+        repo_dir / "Example" / "ExampleTests.csproj",
+        repo_dir / "tests" / "TestRift.NUnit.Tests" / "TestRift.NUnit.Tests.csproj",
+        repo_dir / "tests" / "TestRift.NUnit.Tests.MaxVersions" / "TestRift.NUnit.Tests.MaxVersions.csproj",
+        repo_dir / "tests" / "TestRift.NUnit.Integration.Tests" / "TestRift.NUnit.Integration.Tests.csproj",
+    ]
+
+    print(f"Using local TestRift.Server feed: {server_nuget_dir}")
+    for proj in projects:
+        print(f"\nRestoring {proj.parent.name}...")
+        c.run(f'dotnet restore "{proj}" --force')
+
+
+@task
 def run_example(c, filter=None, server_url="http://localhost:8080"):
     """Run the example NUnit tests.
 
@@ -92,3 +124,16 @@ def run_example(c, filter=None, server_url="http://localhost:8080"):
     print(f"Running example tests (server: {server_url})...")
     with c.cd(str(example_dir)):
         c.run(cmd, env=env)
+
+
+# Configure namespaces
+ns = Collection()
+ns.add_task(build)
+ns.add_task(clean)
+ns.add_task(pack)
+ns.add_task(publish)
+ns.add_task(restore_local)
+ns.add_task(run_example)
+
+# Add test namespace from tests/tasks.py
+ns.add_collection(Collection.from_module(test_tasks_module, name='test'))

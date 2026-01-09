@@ -15,7 +15,8 @@ namespace TestRift.NUnit
     {
         private static readonly object _lock = new();
         private static bool _attempted = false;
-        private const int DefaultStartupTimeoutMs = 5000;
+        private const int DefaultStartupTimeoutMs = 60000; // 60s for venv creation + pip install
+        private static readonly Dictionary<int, int> _startedServerPids = new(); // port -> PID mapping
 
         public static void EnsureServerRunning(string serverUrl, string serverYamlPath = null, bool restartOnConfigChange = false)
         {
@@ -56,7 +57,7 @@ namespace TestRift.NUnit
             var wasHealthy = IsHealthyAny(probeBaseUris, "/health");
 
             var serverPath = FindTestRiftServer();
-            var isNuGet = serverPath != null && serverPath.EndsWith(".ps1", StringComparison.OrdinalIgnoreCase);
+            var isNuGet = serverPath != null && serverPath.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);
             var source = isNuGet ? "NuGet package" : "pip";
             Console.WriteLine($"[TestRift] autoStartServer: starting TestRift Server ({source}) for {baseUri}...");
             if (!string.IsNullOrWhiteSpace(serverYamlPath))
@@ -116,6 +117,34 @@ namespace TestRift.NUnit
             }
         }
 
+        /// <summary>
+        /// Kills the server process that was started by EnsureServerRunning for the specified port.
+        /// </summary>
+        /// <param name="port">The port number of the server to kill.</param>
+        /// <returns>True if a server PID was found and killed, false otherwise.</returns>
+        public static bool KillStartedServer(int port)
+        {
+            int pid;
+            lock (_lock)
+            {
+                if (!_startedServerPids.TryGetValue(port, out pid))
+                {
+                    return false;
+                }
+                _startedServerPids.Remove(port);
+            }
+
+            try
+            {
+                KillByPid(pid);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private static void RunStartAndWaitForExit(string serverYamlPath, bool restartOnConfigChange)
         {
             if (IsWindows())
@@ -155,7 +184,11 @@ namespace TestRift.NUnit
                 {
                     if (IsHealthyAny(winProbe, "/health"))
                     {
-                        // Server is up; close our handle and return (do NOT wait for server to exit).
+                        // Server is up; store PID, close our handle and return (do NOT wait for server to exit).
+                        lock (_lock)
+                        {
+                            _startedServerPids[port] = diag.ProcessId;
+                        }
                         CloseHandle(diag.ProcessHandle);
                         return;
                     }
@@ -298,17 +331,17 @@ namespace TestRift.NUnit
                 env["TESTRIFT_SERVER_YAML"] = serverYamlPath;
             }
 
-            // If this is a .ps1 script, wrap it in PowerShell invocation
-            var isPs1Script = serverExePath?.EndsWith(".ps1", StringComparison.OrdinalIgnoreCase) ?? false;
+            // If this is a .bat script, no wrapper needed
+            var isBatScript = serverExePath?.EndsWith(".bat", StringComparison.OrdinalIgnoreCase) ?? false;
             string actualExePath;
             string actualArguments;
 
-            if (isPs1Script)
+            if (isBatScript)
             {
-                actualExePath = "powershell";
-                var scriptPath = serverExePath;
+                // .bat file - run directly
+                actualExePath = serverExePath;
                 var scriptArgs = restartOnConfigChange ? "--restart-on-config" : "";
-                actualArguments = $"-NoProfile -NonInteractive -File \"{scriptPath}\" {scriptArgs}".Trim();
+                actualArguments = scriptArgs;
             }
             else
             {
@@ -339,7 +372,7 @@ namespace TestRift.NUnit
 
         /// <summary>
         /// Finds the TestRift Server executable/wrapper script.
-        /// First checks for NuGet package (.ps1 on Windows), then falls back to PATH (pip-installed).
+        /// First checks for NuGet package (.bat on Windows), then falls back to PATH (pip-installed).
         /// </summary>
         private static string FindTestRiftServer()
         {
@@ -355,7 +388,7 @@ namespace TestRift.NUnit
         }
 
         /// <summary>
-        /// Attempts to find the TestRift.Server NuGet package wrapper script (.ps1).
+        /// Attempts to find the TestRift.Server NuGet package wrapper script (.bat).
         /// </summary>
         private static string FindNuGetPackageServer()
         {
@@ -373,7 +406,7 @@ namespace TestRift.NUnit
 
                 foreach (var version in versions)
                 {
-                    var wrapperPath = Path.Combine(version.Path, "tools", "testrift-server.ps1");
+                    var wrapperPath = Path.Combine(version.Path, "tools", "testrift-server.bat");
                     if (File.Exists(wrapperPath))
                     {
                         return wrapperPath;
